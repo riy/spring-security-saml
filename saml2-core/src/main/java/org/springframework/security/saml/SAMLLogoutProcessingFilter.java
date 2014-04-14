@@ -15,9 +15,9 @@
 package org.springframework.security.saml;
 
 import org.opensaml.common.SAMLException;
-import org.opensaml.common.SAMLRuntimeException;
 import org.opensaml.saml2.core.LogoutRequest;
 import org.opensaml.saml2.core.LogoutResponse;
+import org.opensaml.saml2.core.StatusCode;
 import org.opensaml.saml2.metadata.provider.MetadataProviderException;
 import org.opensaml.ws.message.decoder.MessageDecodingException;
 import org.slf4j.Logger;
@@ -43,6 +43,8 @@ import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Filter processes arriving SAML Single Logout messages by delegating to the LogoutProfile.
@@ -59,12 +61,17 @@ public class SAMLLogoutProcessingFilter extends LogoutFilter {
     /**
      * Class logger.
      */
-    protected final static Logger log = LoggerFactory.getLogger(SAMLLogoutProcessingFilter.class);
+    protected static final Logger log = LoggerFactory.getLogger(SAMLLogoutProcessingFilter.class);
 
     /**
      * Default processing URL.
      */
     public static final String FILTER_URL = "/saml/SingleLogout";
+
+    /**
+     * Logout handlers.
+     */
+    private final List<LogoutHandler> handlers;
 
     /**
      * Constructor defines URL to redirect to after successful logout and handlers.
@@ -75,6 +82,7 @@ public class SAMLLogoutProcessingFilter extends LogoutFilter {
     public SAMLLogoutProcessingFilter(String logoutSuccessUrl, LogoutHandler... handlers) {
         super(logoutSuccessUrl, handlers);
         this.setFilterProcessesUrl(FILTER_URL);
+        this.handlers = Arrays.asList(handlers);
     }
 
     /**
@@ -85,6 +93,7 @@ public class SAMLLogoutProcessingFilter extends LogoutFilter {
      */
     public SAMLLogoutProcessingFilter(LogoutSuccessHandler logoutSuccessHandler, LogoutHandler... handlers) {
         super(logoutSuccessHandler, handlers);
+        this.handlers = Arrays.asList(handlers);
         this.setFilterProcessesUrl(FILTER_URL);
     }
 
@@ -106,7 +115,7 @@ public class SAMLLogoutProcessingFilter extends LogoutFilter {
      * @throws IOException      error
      * @throws ServletException error
      */
-     public void processLogout(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws IOException, ServletException {
+    public void processLogout(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws IOException, ServletException {
 
         if (requiresLogout(request, response)) {
 
@@ -114,32 +123,40 @@ public class SAMLLogoutProcessingFilter extends LogoutFilter {
 
             try {
 
-                log.debug("Processing SAML2 logout message");
+                log.debug("Processing SAML logout message");
                 context = contextProvider.getLocalEntity(request, response);
                 context.setCommunicationProfileId(getProfileName());
                 processor.retrieveMessage(context);
                 context.setLocalEntityEndpoint(SAMLUtil.getEndpoint(context.getLocalEntityRoleMetadata().getEndpoints(), context.getInboundSAMLBinding(), getFilterProcessesUrl()));
 
             } catch (SAMLException e) {
-                throw new SAMLRuntimeException("Incoming SAML message is invalid", e);
+                logger.debug("Incoming SAML message is invalid", e);
+                throw new ServletException("Incoming SAML message is invalid", e);
             } catch (MetadataProviderException e) {
-                throw new SAMLRuntimeException("Error determining metadata contracts", e);
+                logger.debug("Error determining metadata contracts", e);
+                throw new ServletException("Error determining metadata contracts", e);
             } catch (MessageDecodingException e) {
-                throw new SAMLRuntimeException("Error decoding incoming SAML message", e);
+                logger.debug("Error decoding incoming SAML message", e);
+                throw new ServletException("Error decoding incoming SAML message", e);
             } catch (org.opensaml.xml.security.SecurityException e) {
-                throw new SAMLRuntimeException("Incoming SAML message is invalid", e);
+                logger.debug("Incoming SAML message is invalid", e);
+                throw new ServletException("Incoming SAML message is invalid", e);
             }
-
-            boolean doLogout = true;
 
             if (context.getInboundSAMLMessage() instanceof LogoutResponse) {
 
                 try {
+
                     logoutProfile.processLogoutResponse(context);
+
+                    log.debug("Performing local logout after receiving logout response from {}", context.getPeerEntityId());
+                    super.doFilter(request, response, chain);
+
                     samlLogger.log(SAMLConstants.LOGOUT_RESPONSE, SAMLConstants.SUCCESS, context);
+
                 } catch (Exception e) {
+                    log.debug("Received logout response is invalid", e);
                     samlLogger.log(SAMLConstants.LOGOUT_RESPONSE, SAMLConstants.FAILURE, context, e);
-                    log.warn("Received global logout response is invalid", e);
                 }
 
             } else if (context.getInboundSAMLMessage() instanceof LogoutRequest) {
@@ -151,18 +168,36 @@ public class SAMLLogoutProcessingFilter extends LogoutFilter {
                 }
 
                 try {
-                    // Process request and send response to the sender in case the request is valid
-                    doLogout = logoutProfile.processLogoutRequest(context, credential);
+
+                    boolean doLogout;
+
+                    try {
+
+                        doLogout = logoutProfile.processLogoutRequest(context, credential);
+
+                    } catch (SAMLStatusException e) {
+                        log.debug("Received logout request is invalid, responding with error", e);
+                        logoutProfile.sendLogoutResponse(context, e.getStatusCode(), e.getStatusMessage());
+                        samlLogger.log(SAMLConstants.LOGOUT_REQUEST, SAMLConstants.FAILURE, context, e);
+                        return;
+                    }
+
+                    if (doLogout) {
+                        log.debug("Performing local logout after receiving logout request from {}", context.getPeerEntityId());
+                        for (LogoutHandler handler : handlers) {
+                            handler.logout(request, response, auth);
+                        }
+                    }
+
+                    logoutProfile.sendLogoutResponse(context, StatusCode.SUCCESS_URI, null);
                     samlLogger.log(SAMLConstants.LOGOUT_REQUEST, SAMLConstants.SUCCESS, context);
+
                 } catch (Exception e) {
+                    log.debug("Error processing logout request", e);
                     samlLogger.log(SAMLConstants.LOGOUT_REQUEST, SAMLConstants.FAILURE, context, e);
-                    log.warn("Received global logout request is invalid", e);
+                    throw new ServletException("Error processing logout request", e);
                 }
 
-            }
-
-            if (doLogout) {
-                super.doFilter(request, response, chain);
             }
 
         } else {

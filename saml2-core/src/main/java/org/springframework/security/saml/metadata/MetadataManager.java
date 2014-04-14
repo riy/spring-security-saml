@@ -898,7 +898,7 @@ public class MetadataManager extends ChainingMetadataProvider implements Extende
             for (String idp : idpName) {
                 ExtendedMetadata extendedMetadata = getExtendedMetadata(idp);
                 if (extendedMetadata.isLocal() && entityAlias.equals(extendedMetadata.getAlias())) {
-                    if (entityId != null) {
+                    if (entityId != null && !entityId.equals(idp)) {
                         throw new MetadataProviderException("Alias " + entityAlias + " is used both for entity " + entityId + " and " + idp);
                     } else {
                         entityId = idp;
@@ -909,7 +909,7 @@ public class MetadataManager extends ChainingMetadataProvider implements Extende
             for (String sp : spName) {
                 ExtendedMetadata extendedMetadata = getExtendedMetadata(sp);
                 if (extendedMetadata.isLocal() && entityAlias.equals(extendedMetadata.getAlias())) {
-                    if (entityId != null) {
+                    if (entityId != null && !entityId.equals(sp)) {
                         throw new MetadataProviderException("Alias " + entityAlias + " is used both for entity " + entityId + " and " + sp);
                     } else {
                         entityId = sp;
@@ -1008,7 +1008,7 @@ public class MetadataManager extends ChainingMetadataProvider implements Extende
 
             try {
 
-                log.debug("Executing metadata refresh task");
+                log.trace("Executing metadata refresh task");
 
                 // Invoking getMetadata performs a refresh in case it's needed
                 // Potentially expensive operation, but other threads can still load existing cached data

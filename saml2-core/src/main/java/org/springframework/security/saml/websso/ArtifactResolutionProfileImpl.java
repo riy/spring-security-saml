@@ -93,10 +93,10 @@ public class ArtifactResolutionProfileImpl extends ArtifactResolutionProfileBase
             boolean signMessage = context.getPeerExtendedMetadata().isRequireArtifactResolveSigned();
             processor.sendMessage(context, signMessage, SAMLConstants.SAML2_SOAP11_BINDING_URI);
 
+            log.debug("Sending ArtifactResolution message to {}", uri);
             int responseCode = httpClient.executeMethod(hc, postMethod);
             if (responseCode != 200) {
                 String responseBody = postMethod.getResponseBodyAsString();
-                log.debug("Problem communicating with Artifact Resolution service, received response {}, body {}.", responseCode, responseBody);
                 throw new MessageDecodingException("Problem communicating with Artifact Resolution service, received response " + responseCode + ", body " + responseBody);
             }
 
@@ -105,7 +105,6 @@ public class ArtifactResolutionProfileImpl extends ArtifactResolutionProfileBase
 
         } catch (IOException e) {
 
-            log.debug("Error when sending request to artifact resolution service.", e);
             throw new MessageDecodingException("Error when sending request to artifact resolution service.", e);
 
         } finally {
@@ -128,6 +127,9 @@ public class ArtifactResolutionProfileImpl extends ArtifactResolutionProfileBase
      * including specified trust anchors are trusted and verified using PKIX).
      * <p/>
      * Used trust engine can be customized as part of the SAMLContextProvider used to process this request.
+     * <p/>
+     * Default values for the HostConfiguration are cloned from the HTTPClient set in this instance, when there are
+     * no defaults available a new object is created.
      *
      * @param uri uri the request should be sent to
      * @param context context including the peer address
@@ -139,7 +141,15 @@ public class ArtifactResolutionProfileImpl extends ArtifactResolutionProfileBase
 
         try {
 
-            HostConfiguration hc = new HostConfiguration();
+            HostConfiguration hc = httpClient.getHostConfiguration();
+
+            if (hc != null) {
+                // Clone configuration from the HTTP Client object
+                hc = new HostConfiguration(hc);
+            } else {
+                // Create brand new configuration when there are no defaults
+                hc = new HostConfiguration();
+            }
 
             if (uri.getScheme().equalsIgnoreCase("http")) {
 

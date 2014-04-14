@@ -121,7 +121,7 @@
                     </constructor-arg>
                     <!-- Timeout for metadata loading in ms -->
                     <constructor-arg>
-                        <value type="int">5000</value>
+                        <value type="int">15000</value>
                     </constructor-arg>
                     <property name="parserPool" ref="parserPool"/>
                 </bean>
@@ -164,16 +164,16 @@
 
     <!-- Override default logout processing filter with the one processing SAML messages -->
     <bean id="samlLogoutFilter" class="org.springframework.security.saml.SAMLLogoutFilter">
-        <constructor-arg ref="successLogoutHandler"/>
-        <constructor-arg ref="logoutHandler"/>
-        <constructor-arg ref="logoutHandler"/>
+        <constructor-arg index="0" ref="successLogoutHandler"/>
+        <constructor-arg index="1" ref="logoutHandler"/>
+        <constructor-arg index="2" ref="logoutHandler"/>
     </bean>
 
     <!-- Filter processing incoming logout messages -->
     <!-- First argument determines URL user will be redirected to after successful global logout -->
     <bean id="samlLogoutProcessingFilter" class="org.springframework.security.saml.SAMLLogoutProcessingFilter">
-        <constructor-arg ref="successLogoutHandler"/>
-        <constructor-arg ref="logoutHandler"/>
+        <constructor-arg index="0" ref="successLogoutHandler"/>
+        <constructor-arg index="1" ref="logoutHandler"/>
     </bean>
 
     <!-- Class loading incoming SAML messages from httpRequest stream -->
@@ -230,7 +230,7 @@
                     </bean>
                 </constructor-arg>
                 <property name="processor">
-                    <bean id="soapProcessor" class="org.springframework.security.saml.processor.SAMLProcessorImpl">
+                    <bean class="org.springframework.security.saml.processor.SAMLProcessorImpl">
                         <constructor-arg ref="soapBinding"/>
                     </bean>
                 </property>
@@ -253,7 +253,7 @@
     <bean id="velocityEngine" class="org.springframework.security.saml.util.VelocityFactory" factory-method="getEngine"/>
 
     <!-- XML parser pool needed for OpenSAML parsing -->
-    <bean id="parserPool" class="org.opensaml.xml.parse.StaticBasicParserPool" scope="singleton" init-method="initialize"/>
-    <bean id="parserPoolHolder" class="org.springframework.security.saml.parser.ParserPoolHolder" scope="singleton"/>
+    <bean id="parserPool" class="org.opensaml.xml.parse.StaticBasicParserPool" init-method="initialize"/>
+    <bean id="parserPoolHolder" class="org.springframework.security.saml.parser.ParserPoolHolder"/>
 
 </beans>
